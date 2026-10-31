@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="沉浸式动态天气预报 · 演示版（模拟数据）">
+<title>沉浸式天气预报 · 演示版</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 17a4 4 0 0 1-.6-7.95A5 5 0 0 1 16 8.5a3.5 3.5 0 0 1 .5 6.97' fill='none' stroke='%23FFC85C' stroke-width='1.6' stroke-linecap='round'/%3E%3Ccircle cx='17.5' cy='6.5' r='2.6' fill='%23FFC85C'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Sans+SC:wght@200;300;400;500;700&display=swap">
+<style>
+/* ============ 基础 ============ */
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --ink:#F4F8FF; --ink-dim:rgba(244,248,255,.74); --ink-faint:rgba(244,248,255,.52);
+  --panel:rgba(10,20,38,.42); --panel-soft:rgba(10,20,38,.26);
+  --line:rgba(255,255,255,.16); --line-soft:rgba(255,255,255,.09);
+  --accent:#FFC85C; --cloud:#ffffff; --cloud-op:.9; --sky-mid:#3E9BE0;
+  --shade:rgba(8,18,34,.30); --ground:rgba(6,14,28,.55); --hill:#0D1B30; --hill-op:.5;
+}
+html,body{height:100%}
+body{
+  font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:var(--ink); background:var(--sky-mid); overflow-x:hidden;
+  transition:color .9s ease, background-color 1.2s ease;
+  font-variant-numeric:tabular-nums;
+}
+body[data-weather="cloudy"]{ --sky-mid:#5B8FB9; --accent:#FFD98A; --cloud-op:.95; --shade:rgba(8,18,34,.26); --hill:#10233C }
+body[data-weather="overcast"]{ --sky-mid:#5A6472; --accent:#D3DCE5; --cloud:#97A3B0; --cloud-op:.72; --shade:rgba(6,14,26,.36) }
+body[data-weather="rain"]{ --sky-mid:#6E7682; --accent:#B7C6D6; --cloud:#5B6672; --cloud-op:.8; --shade:rgba(4,10,20,.36) }
+body[data-weather="storm"]{ --sky-mid:#262A33; --accent:#CBE4FF; --cloud:#14181F; --cloud-op:.9; --panel:rgba(5,11,22,.52); --panel-soft:rgba(5,11,22,.34); --shade:rgba(0,5,14,.5) }
+body[data-weather="snow"]{
+  --ink:#20344C; --ink-dim:rgba(32,52,76,.72); --ink-faint:rgba(32,52,76,.5);
+  --sky-mid:#C2D9EB; --accent:#5D89B5; --cloud:#ffffff; --cloud-op:.9;
+  --panel:rgba(255,255,255,.55); --panel-soft:rgba(255,255,255,.34);
+  --line:rgba(32,52,76,.16); --line-soft:rgba(32,52,76,.09);
+  --shade:rgba(120,150,180,.16); --ground:rgba(255,255,255,.5); --hill:#D8E6F2; --hill-op:.85;
+}
+body[data-weather="fog"]{
+  --sky-mid:#3D444D; --accent:#B9CDE2; --cloud:#57616E; --cloud-op:.45;
+  --panel:rgba(12,18,28,.46); --panel-soft:rgba(12,18,28,.3);
+  --line:rgba(255,255,255,.14); --line-soft:rgba(255,255,255,.08);
+  --shade:rgba(0,6,14,.4); --ground:rgba(10,16,26,.5); --hill:#222B36; --hill-op:.6;
+}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{font-family:inherit}
+svg{display:block}
+
+/* ============ 场景层 ============ */
+.scene{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+.sky{position:absolute;inset:0;background-color:var(--sky-mid);transition:background-color 1.2s ease}
+.sky::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.16) 0%,rgba(255,255,255,0) 34%,var(--shade) 100%)}
+.sun{position:absolute;top:8%;right:13%;width:120px;height:120px;border-radius:50%;
+  background:radial-gradient(circle,#FFF6D9 0%,#FFD97A 44%,rgba(255,201,96,.28) 62%,rgba(255,201,96,0) 72%);
+  opacity:0;transform:translateY(10px);transition:opacity 1.4s ease,transform 1.4s ease}
+body[data-weather="sunny"] .sun{opacity:1;transform:translateY(0)}
+body[data-weather="cloudy"] .sun{opacity:.55;transform:translateY(0)}
+.sun::before{content:"";position:absolute;inset:-28px;border-radius:50%;
+  background:radial-gradient(circle,transparent 56%,rgba(255,214,120,.15) 64%,transparent 74%);
+  animation:ray 5s ease-in-out infinite}
+@keyframes ray{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+
+.hills{position:absolute;left:0;right:0;bottom:0;width:100%;height:34vh;color:var(--hill);transition:color 1.2s ease}
+.hills .a{fill:currentColor;fill-opacity:var(--hill-op);transition:fill-opacity 1.2s ease}
+.hills .b{fill:currentColor;fill-opacity:calc(var(--hill-op)*.62);transition:fill-opacity 1.2s ease}
+
+.cloud-layer{position:absolute;left:0;right:0;top:0;transition:opacity 1.2s ease;opacity:var(--cloud-op)}
+.layer-far{top:7%}
+.layer-near{top:18%;opacity:calc(var(--cloud-op)*.85)}
+.cloud{--cw:150px;--ch:44px;position:absolute;left:0;width:var(--cw);height:var(--ch);
+  background:var(--cloud);border-radius:46px;box-shadow:0 8px 22px rgba(8,18,34,.14);
+  animation:drift linear infinite;transition:background-color 1.2s ease}
+.cloud::before,.cloud::after{content:"";position:absolute;background:var(--cloud);border-radius:50%;transition:background-color 1.2s ease}
+.cloud::before{width:calc(var(--cw)*.42);height:calc(var(--ch)*1.4);top:calc(var(--ch)*-0.62);left:calc(var(--cw)*.16)}
+.cloud::after{width:calc(var(--cw)*.6);height:calc(var(--ch)*1.9);top:calc(var(--ch)*-1.02);left:calc(var(--cw)*.4)}
+@keyframes drift{from{transform:translateX(-32vw)}to{transform:translateX(132vw)}}
+
+.fx{position:absolute;inset:0;width:100%;height:100%;display:block}
+.fog{position:absolute;inset:0;opacity:0;transition:opacity 1.6s ease}
+body[data-weather="fog"] .fog{opacity:1}
+.fog i{position:absolute;left:0;border-radius:50%;background:rgba(224,235,248,.42);filter:blur(46px);
+  animation:fogdrift linear infinite;transition:background-color 1.2s ease}
+@keyframes fogdrift{from{transform:translateX(-18vw)}to{transform:translateX(118vw)}}
+
+.dim{position:absolute;inset:0;background:#0A1220;opacity:0;transition:opacity 1.2s ease}
+body[data-weather="storm"] .dim{opacity:.34;animation:dimPulse 7s ease-in-out infinite}
+@keyframes dimPulse{0%,100%{opacity:.3}50%{opacity:.4}}
+.flash{position:absolute;inset:0;background:#EAF4FF;opacity:0;pointer-events:none}
+.flash.on{animation:blink .32s ease-out}
+@keyframes blink{0%{opacity:.9}100%{opacity:0}}
+.ground{position:absolute;left:0;right:0;bottom:0;height:20vh;
+  background:linear-gradient(180deg,transparent,var(--ground));transition:background-color 1.2s ease}
+
+/* ============ 顶栏 ============ */
+.topbar{position:fixed;top:0;left:0;right:0;z-index:30;display:flex;align-items:center;justify-content:space-between;
+  padding:18px 30px;pointer-events:none}
+.topbar>*{pointer-events:auto}
+.loc{position:relative;display:flex;align-items:center;gap:12px}
+.citybtn{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:12px;border:0;background:rgba(255,255,255,.05);
+  color:var(--ink);font-size:18px;font-weight:600;cursor:pointer;transition:background .25s}
+.citybtn:hover{background:var(--panel-soft)}
+.date{font-size:13px;color:var(--ink-dim)}
+.citymenu{position:absolute;top:calc(100% + 8px);left:0;z-index:40;min-width:136px;padding:6px;display:none;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 44px rgba(0,8,20,.28)}
+.citymenu.open{display:block}
+.cityopt{display:block;width:100%;text-align:left;padding:9px 12px;border-radius:9px;border:0;background:none;
+  color:var(--ink);font-size:14px;cursor:pointer;transition:background .2s}
+.cityopt:hover{background:var(--panel-soft)}
+.iconbtn{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--panel-soft);
+  color:var(--ink);cursor:pointer;display:grid;place-items:center;transition:background .25s,border-color .25s}
+.iconbtn:hover{background:var(--panel)}
+.iconbtn[aria-checked="true"]{background:var(--accent);border-color:transparent;color:#1B2A40}
+
+/* ============ 主舞台 ============ */
+.stage{position:relative;z-index:10;min-height:100svh;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:30px;padding:96px 20px 36px;animation:rise .8s cubic-bezier(.22,1,.36,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.hero{text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+.cond{display:flex;align-items:center;gap:8px;font-size:16px;letter-spacing:.14em;color:var(--ink-dim)}
+.temp{font-size:clamp(88px,17vw,150px);font-weight:200;line-height:1;letter-spacing:-.02em}
+.temp sup{font-size:.38em;font-weight:300;vertical-align:.62em;color:var(--ink-dim);letter-spacing:0}
+.hl{font-size:15px;color:var(--ink-dim)}
+
+.pills{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.pill{display:flex;align-items:center;gap:6px;padding:9px 16px;border-radius:999px;border:1px solid var(--line);
+  background:var(--panel-soft);color:var(--ink);font-size:14px;cursor:pointer;transition:background .25s,border-color .25s,transform .15s}
+.pill:hover{background:var(--panel);transform:translateY(-1px)}
+.pill.active{background:var(--accent);border-color:transparent;color:#1B2A40}
+.status{font-size:12.5px;color:var(--ink-faint);text-align:center;min-height:17px;transition:color .3s}
+.status.warn{color:#FFC46B}
+
+/* ============ 底部信息区 ============ */
+.dock{position:relative;z-index:10;max-width:1180px;margin:0 auto;padding:0 22px 22px;display:grid;gap:16px}
+.chips{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.chip{flex:1 1 150px;max-width:210px;display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:11px 14px;border-radius:16px;border:1px solid var(--line-soft);background:var(--panel-soft)}
+.chip b{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.chip span{font-size:12px;color:var(--ink-faint)}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:16px 18px}
+.panel h3{font-size:13px;font-weight:500;color:var(--ink-faint);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.panel h3::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.wday{border:1px solid transparent;background:transparent;border-radius:16px;padding:11px 4px;text-align:center;
+  color:var(--ink);cursor:pointer;transition:background .25s,border-color .25s}
+.wday:hover{background:var(--panel-soft)}
+.wday.sel{background:var(--panel-soft);border-color:var(--line)}
+.wday .wd{font-size:12px;color:var(--ink-faint)}
+.wday .wico{margin:7px 0 5px;color:var(--accent);display:flex;justify-content:center}
+.wday .wh{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.wday .wl{font-size:12px;color:var(--ink-dim)}
+.bar{height:4px;border-radius:2px;background:var(--line-soft);margin:8px 6px 0;position:relative}
+.bar i{position:absolute;top:0;height:4px;border-radius:2px;left:var(--lo);right:calc(100% - var(--hi));
+  background:linear-gradient(90deg,var(--accent),#fff)}
+.weeknote{margin-top:12px;font-size:13px;color:var(--ink-dim);min-height:20px}
+.chartbox{height:196px;width:100%}
+.note{padding:46px 10px;text-align:center;font-size:13px;color:var(--ink-faint)}
+
+.foot{position:relative;z-index:10;text-align:center;padding:0 20px 26px;font-size:12px;color:var(--ink-faint)}
+.grain{position:fixed;inset:0;z-index:60;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E")}
+
+/* ============ 响应式 ============ */
+@media (max-width:860px){
+  .topbar{padding:14px 16px}
+  .citybtn{font-size:16px;min-height:44px;padding:6px 10px}
+  .iconbtn{width:46px;height:46px}
+  .pill{min-height:44px;padding:10px 14px}
+  .stage{padding:88px 16px 28px;gap:24px;min-height:auto}
+  .temp{font-size:clamp(76px,24vw,112px)}
+  .week{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:8px;padding-bottom:6px;-webkit-overflow-scrolling:touch}
+  .wday{flex:0 0 96px;scroll-snap-align:start}
+  .dock{padding:0 14px 18px}
+  .chips{gap:8px}
+  .chip{flex:1 1 calc(50% - 8px);max-width:none}
+  .chartbox{height:170px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body data-weather="sunny">
+<!-- ===== 场景 ===== -->
+<div class="scene" aria-hidden="true">
+  <div class="sky"></div>
+  <div class="sun"></div>
+  <svg class="hills" viewBox="0 0 1440 320" preserveAspectRatio="none" aria-hidden="true">
+    <path class="a" d="M0,320 L0,232 C220,196 420,258 700,222 C980,186 1180,252 1440,214 L1440,320 Z"/>
+    <path class="b" d="M0,320 L0,264 C260,230 520,296 840,262 C1120,232 1300,282 1440,252 L1440,320 Z"/>
+  </svg>
+  <div class="cloud-layer layer-far"></div>
+  <div class="cloud-layer layer-near"></div>
+  <canvas id="fx" class="fx"></canvas>
+  <div class="fog" id="fog"></div>
+  <div class="dim"></div>
+  <div class="flash" id="flash"></div>
+  <div class="ground"></div>
+</div>
+
+<!-- ===== 顶栏 ===== -->
+<header class="topbar">
+  <div class="loc">
+    <button type="button" class="citybtn" id="cityBtn" aria-haspopup="listbox" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 21s-7-5.1-7-11a7 7 0 0 1 14 0c0 5.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>
+      <span id="cityName">西安</span>
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="citymenu" id="cityMenu" role="listbox" aria-label="选择城市"></div>
+    <span class="date" id="dateLine"></span>
+  </div>
+  <button type="button" class="iconbtn" id="soundBtn" role="switch" aria-checked="false" aria-label="环境声开关" title="环境声">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M18.8 6.2a8.5 8.5 0 0 1 0 11.6"/></svg>
+  </button>
+</header>
+
+<!-- ===== 主舞台 ===== -->
+<main class="stage">
+  <div class="hero">
+    <div class="cond"><span id="condIcon"></span><span id="condText">晴</span></div>
+    <div class="temp" id="tempNum">26<sup>°</sup></div>
+    <div class="hl" id="hlLine">最高 31° · 最低 18°</div>
+  </div>
+  <div class="pills" id="pills" role="tablist" aria-label="天气场景"></div>
+  <div class="status" id="statusLine"></div>
+</main>
+
+<!-- ===== 底部信息 ===== -->
+<div class="dock">
+  <div class="chips" id="chips"></div>
+  <section class="panel">
+    <h3>未来 7 天</h3>
+    <div class="week" id="week"></div>
+    <div class="weeknote" id="weekNote">点击任一天查看详情</div>
+  </section>
+  <section class="panel">
+    <h3>未来 24 小时气温</h3>
+    <div class="chartbox" id="hourChart"></div>
+  </section>
+</div>
+
+<footer class="foot">实况数据来自 Open-Meteo（免注册）· 获取失败时自动回退演示数据</footer>
+<div class="grain"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" onerror="var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.1/echarts.min.js';document.head.appendChild(s)"></script>
+<script>
+"use strict";
+
+/* ================= 工具 ================= */
+const $ = s => document.querySelector(s);
+function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
+function rng(seed){let a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const WD=['日','一','二','三','四','五','六'];
+function fmtDate(d){return (d.getMonth()+1)+'月'+d.getDate()+'日 · 周'+WD[d.getDay()]}
+
+/* ================= 数据（演示用模拟数据） ================= */
+const WEATHERS=[
+  {key:'sunny',label:'晴'},{key:'cloudy',label:'多云'},{key:'overcast',label:'阴'},
+  {key:'rain',label:'小雨'},{key:'storm',label:'雷雨'},{key:'snow',label:'雪'},{key:'fog',label:'雾'}
+];
+const WM={
+  sunny:{d:[0,0],seq:['sunny','sunny','cloudy','sunny','overcast','rain','cloudy'],humid:44,uv:7,wind:'东南风 2级',aqi:'优 42'},
+  cloudy:{d:[-2,-1],seq:['cloudy','overcast','rain','cloudy','sunny','cloudy','overcast'],humid:56,uv:4,wind:'东风 3级',aqi:'优 58'},
+  overcast:{d:[-6,-4],seq:['overcast','rain','rain','cloudy','overcast','sunny','cloudy'],humid:70,uv:2,wind:'北风 2级',aqi:'良 72'},
+  rain:{d:[-9,-7],seq:['rain','rain','overcast','cloudy','sunny','cloudy','rain'],humid:88,uv:1,wind:'东北风 3级',aqi:'良 46'},
+  storm:{d:[-7,-5],seq:['storm','rain','cloudy','sunny','sunny','cloudy','overcast'],humid:90,uv:1,wind:'西北风 4级',aqi:'良 35'},
+  snow:{d:[-16,-14],seq:['snow','snow','overcast','sunny','cloudy','snow','cloudy'],humid:68,uv:2,wind:'西北风 3级',aqi:'优 30'},
+  fog:{d:[-5,-3],seq:['fog','cloudy','sunny','cloudy','overcast','rain','cloudy'],humid:82,uv:2,wind:'微风 1级',aqi:'良 88'}
+};
+const CITIES={
+  '西安':{lat:34.34,lon:108.94,high:31,low:18},'北京':{lat:39.90,lon:116.41,high:26,low:12},
+  '上海':{lat:31.23,lon:121.47,high:27,low:20},'广州':{lat:23.13,lon:113.26,high:30,low:23},
+  '成都':{lat:30.66,lon:104.07,high:25,low:17},'哈尔滨':{lat:45.80,lon:126.53,high:9,low:-2}
+};
+const state={city:'西安',weather:'sunny',selDay:0};
+let realData=null, dataMode='demo', previewKey=null;
+const wlabel=k=>{const f=WEATHERS.find(w=>w.key===k);return f?f.label:'晴';};
+function codeToWeather(code){
+  if(code===0||code===1) return 'sunny';
+  if(code===2) return 'cloudy';
+  if(code===3) return 'overcast';
+  if(code>=45&&code<=48) return 'fog';
+  if(code>=95) return 'storm';
+  if(code>=71&&code<=77) return 'snow';
+  if(code>=51&&code<=67) return 'rain';
+  if(code>=80&&code<=82) return 'rain';
+  return 'cloudy';
+}
+const DIRS=['北','东北','东','东南','南','西南','西','西北'];
+function dirText(deg){ return DIRS[Math.round((((deg%360)+360)%360)/45)%8]+'风'; }
+function beaufort(kmh){ const t=[1,5,11,19,28,38,49,61,74,88,102,117]; for(let i=0;i<t.length;i++) if(kmh<=t[i]) return i; return 12; }
+
+/* ================= 图标 ================= */
+const ICONS={
+  sunny:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.3M12 19.1v2.3M2.6 12h2.3M19.1 12h2.3M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/></svg>',
+  cloudy:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 16.5a3.8 3.8 0 0 1-.55-7.55A4.8 4.8 0 0 1 16.5 8.5a3.4 3.4 0 0 1 .42 6.78"/><circle cx="17.8" cy="6.2" r="2.4"/></svg>',
+  overcast:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 16.5a3.8 3.8 0 0 1-.55-7.55A4.8 4.8 0 0 1 16.5 8.5a3.4 3.4 0 0 1 .42 6.78"/></svg>',
+  rain:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 13.5a3.8 3.8 0 0 1-.55-7.55A4.8 4.8 0 0 1 16.5 5.5a3.4 3.4 0 0 1 .42 6.78"/><path d="M8.5 15.5v2.5M12 16.5v2.5M15.5 15.5v2.5"/></svg>',
+  storm:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 11.5a3.8 3.8 0 0 1-.55-7.55A4.8 4.8 0 0 1 16.5 3.5a3.4 3.4 0 0 1 .42 6.78"/><path d="M11.5 13.5l-1.8 3.2h2.4l-1.6 3.3"/></svg>',
+  snow:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 2.6v18.8M3.8 7.4l16.4 9.2M20.2 7.4L3.8 16.6M12 5.2l1.5 1.5M12 5.2l-1.5 1.5M12 18.8l1.5-1.5M12 18.8l-1.5-1.5"/></svg>',
+  fog:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 15.5a3.8 3.8 0 0 1-.55-7.55A4.8 4.8 0 0 1 16.5 7.5a3.4 3.4 0 0 1 .42 6.78"/><path d="M4 19h16M7 21.5h10"/></svg>'
+};
+const ICON_SM={
+  drop:'<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3.2s6 6.4 6 10.3a6 6 0 0 1-12 0C6 9.6 12 3.2 12 3.2z"/></svg>',
+  wind:'<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8h11a2.5 2.5 0 1 0-2.4-3.2M3 12h15a2.5 2.5 0 1 1-2.4 3.2M3 16h8.5"/></svg>',
+  uv:'<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.4M12 19.6V22M2 12h2.4M19.6 12H22M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M19.1 4.9l-1.7 1.7M6.6 17.4l-1.7 1.7"/></svg>',
+  leaf:'<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20c0-9 5-15 16-16-1 11-7 16-14 16z"/><path d="M4 20c4-5 8-9 12-11"/></svg>'
+};
+
+/* ================= UI：场景切换按钮 ================= */
+const pillsEl=$('#pills');
+WEATHERS.forEach(w=>{
+  const b=document.createElement('button');
+  b.type='button'; b.className='pill'; b.dataset.key=w.key; b.setAttribute('role','tab');
+  b.setAttribute('aria-selected','false');
+  b.innerHTML=ICONS[w.key]+'<span>'+w.label+'</span>';
+  b.addEventListener('click',()=>selectWeather(w.key));
+  pillsEl.appendChild(b);
+});
+function sceneKey(){ return previewKey||state.weather; }
+function paintPills(){
+  pillsEl.querySelectorAll('.pill').forEach(p=>{
+    const on=p.dataset.key===sceneKey();
+    p.classList.toggle('active',on); p.setAttribute('aria-selected',on?'true':'false');
+  });
+}
+function selectWeather(key){
+  if(dataMode==='real'){
+    previewKey=(previewKey===key?null:key);
+    paintPills(); setScene(sceneKey()); paintStatus();
+    return;
+  }
+  if(state.weather===key) return;
+  state.weather=key;
+  paintPills(); setScene(key); updateData();
+}
+
+/* ================= UI：城市选择 ================= */
+const cityBtn=$('#cityBtn'), cityMenu=$('#cityMenu');
+Object.keys(CITIES).forEach(name=>{
+  const b=document.createElement('button');
+  b.type='button'; b.className='cityopt'; b.setAttribute('role','option'); b.textContent=name;
+  b.addEventListener('click',()=>{
+    state.city=name; $('#cityName').textContent=name;
+    cityMenu.classList.remove('open'); cityBtn.setAttribute('aria-expanded','false');
+    previewKey=null;
+    setScene(state.weather); paintPills();
+    loadReal(name);
+  });
+  cityMenu.appendChild(b);
+});
+cityBtn.addEventListener('click',e=>{
+  e.stopPropagation();
+  cityMenu.classList.toggle('open');
+  cityBtn.setAttribute('aria-expanded',cityMenu.classList.contains('open')?'true':'false');
+});
+document.addEventListener('click',e=>{
+  if(!e.target.closest('.loc')){
+    cityMenu.classList.remove('open'); cityBtn.setAttribute('aria-expanded','false');
+  }
+});
+
+/* ================= 数据计算（模拟数据，基于城市+天气+日期做稳定随机） ================= */
+function todayHL(){
+  const w=WM[state.weather], c=CITIES[state.city];
+  return [c.high+w.d[0], c.low+w.d[1]];
+}
+function hourlyData(){
+  if(dataMode==='real'&&realData){
+    const times=realData.hourly.time, vals=realData.hourly.temperature_2m;
+    const nowTs=Date.now();
+    let start=0;
+    for(let i=0;i<times.length;i++){ if(new Date(times[i]).getTime()>=nowTs-30*60*1000){ start=i; break; } }
+    return vals.slice(start,start+24).map((v,i)=>({
+      h:String(new Date(times[start+i]).getHours()).padStart(2,'0'),
+      v:Math.round(v*10)/10
+    }));
+  }
+  const [hi,lo]=todayHL();
+  const r=rng(hashStr(state.city+state.weather+'h'));
+  const base=(hi+lo)/2, amp=(hi-lo)/2, out=[];
+  for(let h=0;h<24;h++){
+    const v=base+amp*Math.cos((h-14)/24*2*Math.PI)+(r()-0.5)*2.2;
+    out.push({h:(h<10?'0'+h:''+h), v:Math.round(v*10)/10});
+  }
+  return out;
+}
+function weekItems(){
+  if(dataMode==='real'&&realData){
+    const dl=realData.daily, out=[];
+    for(let i=0;i<7;i++) out.push({type:codeToWeather(dl.weather_code[i]),hi:Math.round(dl.temperature_2m_max[i]),lo:Math.round(dl.temperature_2m_min[i])});
+    return out;
+  }
+  const w=WM[state.weather], c=CITIES[state.city], r=rng(hashStr(state.city+state.weather+'w'));
+  const out=[];
+  for(let i=0;i<7;i++){
+    let type,hi,lo;
+    if(i===0){
+      type=state.weather;
+      const [h,l]=todayHL(); hi=h; lo=l;
+    }else{
+      type=w.seq[Math.floor(r()*w.seq.length)];
+      const dm=WM[type].d;
+      hi=c.high+dm[0]+Math.round((r()-0.5)*4);
+      lo=c.low+dm[1]+Math.round((r()-0.5)*4);
+    }
+    out.push({type,hi,lo});
+  }
+  return out;
+}
+
+/* ================= UI：主数据渲染 ================= */
+function updateData(){
+  if(dataMode==='real'&&realData) updateReal();
+  else updateDemo();
+}
+function updateDemo(){
+  const [hi,lo]=todayHL();
+  const wm=WM[state.weather];
+  $('#condIcon').innerHTML=ICONS[state.weather];
+  $('#condText').textContent=wlabel(state.weather);
+  $('#tempNum').innerHTML=Math.round((hi+lo)/2)+'<sup>°</sup>';
+  $('#hlLine').textContent='最高 '+hi+'° · 最低 '+lo+'°';
+  $('#chips').innerHTML=[
+    [wm.humid+'%','湿度',ICON_SM.drop],
+    [wm.wind,'风向',ICON_SM.wind],
+    [wm.uv+' 级','紫外线',ICON_SM.uv],
+    [wm.aqi,'空气',ICON_SM.leaf]
+  ].map(([v,k,ic])=>'<div class="chip">'+ic+'<b>'+v+'</b><span>'+k+'</span></div>').join('');
+  renderWeek(); renderChart();
+}
+function updateReal(){
+  const cur=realData.current, dl=realData.daily;
+  $('#condIcon').innerHTML=ICONS[state.weather];
+  $('#condText').textContent=wlabel(state.weather);
+  $('#tempNum').innerHTML=Math.round(cur.temperature_2m)+'<sup>°</sup>';
+  $('#hlLine').textContent='最高 '+Math.round(dl.temperature_2m_max[0])+'° · 最低 '+Math.round(dl.temperature_2m_min[0])+'°';
+  const kmh=cur.wind_speed_10m||0, deg=cur.wind_direction_10m||0;
+  const uv=dl.uv_index_max?Math.round(dl.uv_index_max[0]):0;
+  $('#chips').innerHTML=[
+    [Math.round(cur.relative_humidity_2m)+'%','湿度',ICON_SM.drop],
+    [dirText(deg)+' '+beaufort(kmh)+'级','风向',ICON_SM.wind],
+    [uv+' 级','紫外线',ICON_SM.uv],
+    ['暂无','空气',ICON_SM.leaf]
+  ].map(([v,k,ic])=>'<div class="chip">'+ic+'<b>'+v+'</b><span>'+k+'</span></div>').join('');
+  renderWeek(); renderChart();
+}
+
+function renderWeek(){
+  const wk=weekItems(), now=new Date();
+  const minLo=Math.min(...wk.map(d=>d.lo)), maxHi=Math.max(...wk.map(d=>d.hi));
+  const span=(maxHi-minLo)||1;
+  $('#week').innerHTML=wk.map((d,i)=>{
+    const dd=new Date(now.getTime()+i*864e5);
+    const lbl=i===0?'今天':(i===1?'明天':'周'+WD[dd.getDay()]);
+    const loPct=((d.lo-minLo)/span*100).toFixed(1), hiPct=((d.hi-minLo)/span*100).toFixed(1);
+    return '<button type="button" class="wday'+(i===state.selDay?' sel':'')+'" data-i="'+i+'">'+
+      '<div class="wd">'+lbl+'</div>'+
+      '<div class="wico">'+ICONS[d.type]+'</div>'+
+      '<div class="wh">'+d.hi+'°</div>'+
+      '<div class="wl">'+d.lo+'°</div>'+
+      '<div class="bar" style="--lo:'+loPct+'%;--hi:'+hiPct+'%"><i></i></div>'+
+    '</button>';
+  }).join('');
+  const sel=wk[state.selDay];
+  if(state.selDay===0){
+    $('#weekNote').textContent='今天 · '+wlabel(sel.type)+' · '+sel.hi+'° / '+sel.lo+'°（点击任一天可切换查看）';
+  }else{
+    $('#weekNote').textContent='第 '+state.selDay+' 天 · '+wlabel(sel.type)+' · '+sel.hi+'° / '+sel.lo+'°';
+  }
+}
+$('#week').addEventListener('click',e=>{
+  const b=e.target.closest('.wday'); if(!b) return;
+  state.selDay=+b.dataset.i; renderWeek();
+});
+
+/* ================= UI：24 小时气温图（ECharts） ================= */
+let chart=null;
+function renderChart(){
+  const el=$('#hourChart');
+  if(!window.echarts){
+    el.innerHTML='<div class="note">图表组件需要联网加载（ECharts CDN 未就绪），其余功能不受影响</div>';
+    return;
+  }
+  const css=getComputedStyle(document.body);
+  const accent=css.getPropertyValue('--accent').trim()||'#FFC85C';
+  const inkDim=css.getPropertyValue('--ink-dim').trim()||'rgba(244,248,255,.7)';
+  const data=hourlyData();
+  if(!chart){ chart=echarts.init(el,null,{renderer:'canvas'}); }
+  chart.setOption({
+    animationDuration:520,
+    grid:{left:6,right:6,top:26,bottom:26},
+    tooltip:{trigger:'axis',backgroundColor:'rgba(16,26,42,.92)',borderColor:'rgba(255,255,255,.18)',
+      borderWidth:1,padding:[8,12],textStyle:{color:'#F4F8FF',fontSize:12},
+      formatter:ps=>ps[0].axisValue+':00 · '+ps[0].value+'°'},
+    xAxis:{type:'category',boundaryGap:false,
+      data:data.map(d=>d.h),
+      axisLine:{show:false},axisTick:{show:false},axisLabel:{color:inkDim,fontSize:11,margin:10,interval:5}},
+    yAxis:{type:'value',show:false,
+      min:Math.floor(Math.min(...data.map(d=>d.v))-2),
+      max:Math.ceil(Math.max(...data.map(d=>d.v))+2)},
+    series:[{type:'line',smooth:true,symbol:'none',data:data.map(d=>d.v),
+      lineStyle:{width:2.4,color:accent},
+      areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[
+        {offset:0,color:accent+'88'},{offset:1,color:accent+'00'}])}}]
+  });
+}
+window.addEventListener('resize',()=>{ if(chart) chart.resize(); });
+if('ResizeObserver' in window){
+  new ResizeObserver(()=>{ if(chart) chart.resize(); }).observe($('#hourChart'));
+}
+
+/* ================= 场景：云层与雾 ================= */
+const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const farLayer=$('.layer-far'), nearLayer=$('.layer-near'), fogEl=$('#fog'), flashEl=$('#flash');
+const CLOUD_CFG={
+  sunny:{far:0,near:0,dur:80}, cloudy:{far:5,near:3,dur:86}, overcast:{far:5,near:3,dur:92},
+  rain:{far:5,near:3,dur:84}, storm:{far:6,near:4,dur:72}, snow:{far:3,near:2,dur:96}, fog:{far:3,near:2,dur:150}
+};
+function mkCloud(layer,dur){
+  const c=document.createElement('div'); c.className='cloud';
+  const cw=Math.round(90+Math.random()*120), ch=Math.round(cw*0.3);
+  c.style.cssText='--cw:'+cw+'px;--ch:'+ch+'px;top:'+(Math.random()*13).toFixed(1)+'%;'+
+    'animation-duration:'+(dur*(1.5-Math.min(.8,cw/260))).toFixed(1)+'s;animation-delay:-'+(Math.random()*dur*2).toFixed(1)+'s;'+
+    'opacity:'+(0.5+Math.random()*0.45).toFixed(2);
+  layer.appendChild(c);
+}
+function buildClouds(){
+  farLayer.innerHTML=''; nearLayer.innerHTML='';
+  const cf=CLOUD_CFG[state.weather];
+  for(let i=0;i<cf.far;i++) mkCloud(farLayer,cf.dur*1.7);
+  for(let i=0;i<cf.near;i++) mkCloud(nearLayer,cf.dur);
+}
+function buildFog(){
+  fogEl.innerHTML='';
+  for(let i=0;i<3;i++){
+    const b=document.createElement('i');
+    const w=Math.round(26+Math.random()*26);
+    b.style.cssText='width:'+w+'vw;height:'+Math.round(w*0.55)+'vw;top:'+(12+Math.random()*36).toFixed(1)+'%;'+
+      'animation-duration:'+(52+Math.random()*34).toFixed(1)+'s;animation-delay:-'+(Math.random()*46).toFixed(1)+'s';
+    fogEl.appendChild(b);
+  }
+}
+
+/* ================= 场景：粒子（雨 / 雷雨 / 雪） ================= */
+const cv=$('#fx'), cx=cv.getContext('2d');
+let W=0,H=0,DPR=1,groundY=0;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=document.documentElement.clientWidth||window.innerWidth;
+  H=document.documentElement.clientHeight||window.innerHeight;
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  cx.setTransform(DPR,0,0,DPR,0,0);
+  groundY=H*0.88;
+}
+window.addEventListener('resize',resize); resize();
+
+let mode='none',drops=[],flakes=[],lastFlash=0;
+function makeDrop(){ return {x:Math.random()*W,y:-30-Math.random()*90,len:16+Math.random()*14,v:9+Math.random()*7}; }
+function setMode(k){
+  mode=(k==='rain'||k==='storm')?k:(k==='snow'?'snow':'none');
+  drops=[]; flakes=[]; lastFlash=0;
+  if(mode==='snow'){
+    const n=Math.min(120,Math.round(W*0.055));
+    for(let i=0;i<n;i++) flakes.push({
+      x:Math.random()*W,y:Math.random()*H,r:1.2+Math.random()*2.8,
+      v:0.7+Math.random()*1.6,sw:18+Math.random()*34,ph:Math.random()*6.28,sp:0.3+Math.random()*0.7
+    });
+  }else if(mode==='rain'){
+    const n=Math.round(W*0.07);
+    for(let i=0;i<n;i++) drops.push(makeDrop());
+  }else if(mode==='storm'){
+    const n=Math.round(W*0.12);
+    for(let i=0;i<n;i++) drops.push(makeDrop());
+  }
+}
+function flashNow(){
+  flashEl.classList.remove('on'); void flashEl.offsetWidth; flashEl.classList.add('on');
+  setTimeout(()=>flashEl.classList.remove('on'),330);
+}
+let loopOn=false,last=0;
+function tick(ts){
+  if(!loopOn) return;
+  const dt=Math.min(34,ts-(last||ts)||16); last=ts;
+  cx.clearRect(0,0,W,H);
+  if(mode==='rain'||mode==='storm'){
+    cx.lineWidth=1.1;
+    for(let i=0;i<drops.length;i++){
+      const d=drops[i];
+      d.y+=d.v*dt*0.06; d.x-=d.v*dt*0.012;
+      cx.strokeStyle='rgba(203,225,255,'+(0.26+Math.random()*0.32).toFixed(2)+')';
+      cx.beginPath(); cx.moveTo(d.x,d.y); cx.lineTo(d.x+0.18*d.len,d.y+d.len); cx.stroke();
+      if(d.y>H+40) drops[i]=makeDrop();
+    }
+    if(mode==='storm'){
+      const now=performance.now();
+      if(now-lastFlash>3200 && Math.random()<0.005){ flashNow(); lastFlash=now; }
+    }
+  }else if(mode==='snow'){
+    for(let i=0;i<flakes.length;i++){
+      const f=flakes[i];
+      f.ph+=f.sp*dt*0.016*0.5;
+      f.x+=Math.sin(f.ph)*f.sw*dt*0.002;
+      f.y+=f.v*dt*0.06;
+      cx.fillStyle='rgba(255,255,255,.92)';
+      cx.beginPath(); cx.arc(f.x,f.y,f.r,0,6.283); cx.fill();
+      if(f.y>groundY){
+        f.y=groundY;
+        if(Math.random()<0.008){ f.y=-20; f.x=Math.random()*W; }
+      }
+    }
+  }
+  requestAnimationFrame(tick);
+}
+function startLoop(){ if(loopOn||reduced) return; loopOn=true; requestAnimationFrame(tick); }
+function stopLoop(){ loopOn=false; }
+document.addEventListener('visibilitychange',()=>{ document.hidden?stopLoop():startLoop(); });
+
+/* ================= 场景切换 ================= */
+function setScene(key){
+  buildClouds();
+  setMode(key);
+  if(!reduced) startLoop();
+  updateSound(key);
+}
+/* ================= 环境声（需用户点击开启，可随时静音） ================= */
+const SND={
+  sunny:{bed:{t:'lowpass',f:320,g:0},birds:true},
+  cloudy:{bed:{t:'lowpass',f:420,q:0.8,g:0.05}},
+  overcast:{bed:{t:'lowpass',f:400,g:0}},
+  rain:{bed:{t:'lowpass',f:640,q:0.9,g:0.05},drips:true},
+  storm:{bed:{t:'lowpass',f:720,q:0.7,g:0.16},thunder:true},
+  snow:{bed:{t:'highpass',f:3600,q:0.7,g:0.035}},
+  fog:{bed:{t:'lowpass',f:400,g:0}}
+};
+let ac=null,master=null,bedGain=null,noiseBuf=null,noiseSrc=null,filter=null,soundOn=false,ambientTimer=null;
+function ensureAudio(){
+  if(ac) return;
+  ac=new (window.AudioContext||window.webkitAudioContext)();
+  master=ac.createGain(); master.gain.value=1; master.connect(ac.destination);
+  const len=Math.floor(ac.sampleRate*2);
+  noiseBuf=ac.createBuffer(1,len,ac.sampleRate);
+  const d=noiseBuf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+  bedGain=ac.createGain(); bedGain.gain.value=0;
+  noiseSrc=ac.createBufferSource(); noiseSrc.buffer=noiseBuf; noiseSrc.loop=true;
+  filter=ac.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=600; filter.Q.value=0.7;
+  noiseSrc.connect(filter); filter.connect(bedGain); bedGain.connect(master);
+  const lfo=ac.createOscillator(); lfo.frequency.value=0.11;
+  const lfoGain=ac.createGain(); lfoGain.gain.value=0.01;
+  lfo.connect(lfoGain); lfoGain.connect(bedGain.gain); lfo.start();
+  noiseSrc.start();
+}
+function rampTo(param,val,t,dur){
+  param.cancelScheduledValues(t);
+  param.setValueAtTime(param.value,t);
+  param.linearRampToValueAtTime(val,t+(dur||0.6));
+}
+function applyBed(key){
+  const s=SND[key]||SND.cloudy;
+  filter.type=s.bed.t; filter.Q.value=s.bed.q||0.7;
+  filter.frequency.setTargetAtTime(s.bed.f,ac.currentTime,0.3);
+  rampTo(bedGain.gain,s.bed.g,ac.currentTime,0.8);
+}
+function birdChirp(){
+  const t0=ac.currentTime;
+  const n=1+Math.floor(Math.random()*2);
+  for(let i=0;i<n;i++){
+    const ts=t0+i*(0.09+Math.random()*0.06);
+    const o=ac.createOscillator(),g=ac.createGain();
+    const f0=1700+Math.random()*1300;
+    const f1=Math.max(400,f0+(260+Math.random()*700)*(Math.random()<0.5?-1:1));
+    const dur=0.06+Math.random()*0.09;
+    o.type='sine';
+    o.frequency.setValueAtTime(f0,ts);
+    o.frequency.exponentialRampToValueAtTime(f1,ts+dur);
+    g.gain.setValueAtTime(0.0001,ts);
+    g.gain.linearRampToValueAtTime(0.11,ts+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001,ts+dur);
+    o.connect(g); g.connect(master);
+    o.start(ts); o.stop(ts+dur+0.03);
+  }
+}
+function drip(){
+  const t0=ac.currentTime;
+  const mk=dt=>{
+    const src=ac.createBufferSource(); src.buffer=noiseBuf;
+    const bp=ac.createBiquadFilter(); bp.type='bandpass';
+    bp.frequency.value=1500+Math.random()*1500; bp.Q.value=2.2;
+    const g=ac.createGain(); const amp=0.04+Math.random()*0.08;
+    const ts=t0+dt;
+    g.gain.setValueAtTime(0.0001,ts);
+    g.gain.linearRampToValueAtTime(amp,ts+0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001,ts+0.045+Math.random()*0.04);
+    src.connect(bp); bp.connect(g); g.connect(master);
+    src.start(ts); src.stop(ts+0.1);
+  };
+  mk(0);
+  if(Math.random()<0.45) mk(0.05+Math.random()*0.08);
+}
+function thunderRumble(){
+  const t0=ac.currentTime;
+  const src=ac.createBufferSource(); src.buffer=noiseBuf;
+  const lp=ac.createBiquadFilter(); lp.type='lowpass';
+  lp.frequency.setValueAtTime(340,t0);
+  lp.frequency.exponentialRampToValueAtTime(85,t0+2.3);
+  const g=ac.createGain(); const dur=2.4+Math.random()*1.9;
+  g.gain.setValueAtTime(0.0001,t0);
+  g.gain.linearRampToValueAtTime(0.15+Math.random()*0.15,t0+0.28);
+  g.gain.setValueAtTime(g.gain.value,t0+0.8+Math.random()*0.9);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  src.connect(lp); lp.connect(g); g.connect(master);
+  src.start(t0); src.stop(t0+dur+0.1);
+}
+function startAmbient(key){
+  if(ambientTimer){ clearInterval(ambientTimer); ambientTimer=null; }
+  const s=SND[key];
+  if(!s) return;
+  if(s.birds) ambientTimer=setInterval(()=>{ if(Math.random()<0.5) birdChirp(); },1500);
+  else if(s.drips) ambientTimer=setInterval(()=>{ drip(); },110);
+  else if(s.thunder) ambientTimer=setInterval(()=>{ if(Math.random()<0.35) thunderRumble(); },1400);
+}
+function stopAmbient(){ if(ambientTimer){ clearInterval(ambientTimer); ambientTimer=null; } }
+function paintSoundBtn(){
+  const b=$('#soundBtn');
+  if(soundOn){
+    b.innerHTML='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M18.8 6.2a8.5 8.5 0 0 1 0 11.6"/></svg>';
+  }else{
+    b.innerHTML='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 8.5l5 5M21.5 8.5l-5 5"/></svg>';
+  }
+}
+function toggleSound(){
+  ensureAudio();
+  if(ac.state==='suspended') ac.resume();
+  soundOn=!soundOn;
+  $('#soundBtn').setAttribute('aria-checked',soundOn?'true':'false');
+  paintSoundBtn();
+  const t=ac.currentTime;
+  if(soundOn){ rampTo(master.gain,1,t,0.3); applyBed(state.weather); startAmbient(state.weather); }
+  else{ stopAmbient(); rampTo(master.gain,0,t,0.15); }
+}
+function updateSound(key){
+  if(!ac||!soundOn) return;
+  applyBed(key); startAmbient(key);
+}
+$('#soundBtn').addEventListener('click',toggleSound);
+paintSoundBtn();
+
+/* ================= 实时数据（Open-Meteo，免注册） ================= */
+async function fetchReal(city){
+  const c=CITIES[city];
+  const url='https://api.open-meteo.com/v1/forecast?latitude='+c.lat+'&longitude='+c.lon+
+    '&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m'+
+    '&hourly=temperature_2m'+
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,uv_index_max'+
+    '&timezone=auto&forecast_days=7';
+  const ctrl=new AbortController();
+  const to=setTimeout(()=>ctrl.abort(),9000);
+  try{
+    const r=await fetch(url,{signal:ctrl.signal});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return await r.json();
+  }finally{ clearTimeout(to); }
+}
+function paintStatus(){
+  const el=$('#statusLine');
+  if(!el) return;
+  if(dataMode==='loading'){
+    el.textContent='正在获取 '+state.city+' 实时天气…';
+    el.classList.add('warn'); return;
+  }
+  if(dataMode!=='real'||!realData){
+    el.textContent='实时数据获取失败，已回退为演示数据';
+    el.classList.add('warn'); return;
+  }
+  el.classList.remove('warn');
+  if(previewKey&&previewKey!==state.weather){
+    el.textContent='场景预览：'+wlabel(previewKey)+' · 实况：'+wlabel(state.weather)+' '+Math.round(realData.current.temperature_2m)+'°';
+  }else{
+    el.textContent='实况：'+wlabel(state.weather)+' '+Math.round(realData.current.temperature_2m)+'° · 数据来自 Open-Meteo';
+  }
+}
+async function loadReal(city){
+  dataMode='loading'; paintStatus();
+  try{
+    const j=await fetchReal(city);
+    realData=j; dataMode='real';
+    state.weather=codeToWeather(j.current.weather_code);
+    previewKey=null;
+    paintPills(); setScene(sceneKey()); updateData(); paintStatus();
+  }catch(err){
+    realData=null; dataMode='demo';
+    paintPills(); setScene(sceneKey()); updateData(); paintStatus();
+  }
+}
+
+/* ================= 启动 ================= */
+$('#dateLine').textContent=fmtDate(new Date());
+paintPills();
+buildFog();
+setScene(sceneKey());
+updateData();
+loadReal(state.city);
+if(!reduced) startLoop();
+</script>
+</body>
+</html>
